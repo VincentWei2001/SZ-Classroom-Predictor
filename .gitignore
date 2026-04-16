@@ -1,0 +1,21 @@
+# PyInstaller
+build/
+dist/
+
+# Release artifacts (use GitHub Releases instead of committing binaries)
+*.zip
+school_app_models.bin
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+Desktop.ini
