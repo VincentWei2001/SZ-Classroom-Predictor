@@ -21,6 +21,17 @@ __pycache__/
 **/SHAP_bar_*.svg
 **/SHAP_dot_*.svg
 
+# Scenario / training exports at repo root (keep locally for rebuild_secure_package)
+030*_*.csv
+031*_*.csv
+模型评估汇总*.csv
+不同行_*.csv
+255行*.csv
+
+# Only version the canonical app notebook (other .ipynb stay local)
+*.ipynb
+!预测应用完整版.ipynb
+
 # OS
 Thumbs.db
 Desktop.ini
