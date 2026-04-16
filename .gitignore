@@ -16,6 +16,11 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
+# Trained model artifacts (end users: use GitHub Release zip with school_app_models.bin)
+*.joblib
+**/SHAP_bar_*.svg
+**/SHAP_dot_*.svg
+
 # OS
 Thumbs.db
 Desktop.ini
