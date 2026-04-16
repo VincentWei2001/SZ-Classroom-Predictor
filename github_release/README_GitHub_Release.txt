@@ -13,9 +13,14 @@ GitHub Release 上传说明
 
 发布者操作
 ----------
-在 GitHub 仓库页面：Releases -> Draft a new release
-- 上传本目录中的 school_app_secure_portable.zip 作为 Release 资源。
-- 若单文件超过 GitHub 附件大小上限，需拆包或使用外链，参见项目说明。
+方式 A：在 GitHub 仓库页面 Releases -> Draft a new release，上传本目录中的
+school_app_secure_portable.zip。
+
+方式 B（自动化）：在仓库根目录 PowerShell 中设置 GITHUB_TOKEN（需 repo 权限），执行
+  .\scripts\publish_release.ps1
+会先 git push，再创建 Release 并上传 zip（默认 tag v1.0.0，可用环境变量 RELEASE_TAG 覆盖）。
+
+若单文件超过 GitHub 附件大小上限，需拆包或使用外链，参见项目 README。
 
 重新生成本 zip
 --------------
