@@ -27,6 +27,17 @@ Windows desktop app for building-performance prediction (Qt / PySide6, XGBoost /
 - `secure_model_bundle.py` — builds `school_app_models.bin` (Fernet + zlib)
 - `github_release/` — helper text for maintainers; the release zip is ignored by git (`*.zip`)
 
+## Publishing to GitHub
+
+Remote is expected to be `https://github.com/VincentWei2001/SZ-Classroom-Predictor.git`.
+
+1. Commit and push: `git push -u origin main` (use a [PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) if HTTPS prompts fail).
+2. **Release zip:** upload `github_release/school_app_secure_portable.zip` on the [Releases](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases) page, or run (PowerShell, with `GITHUB_TOKEN` set):
+
+   `.\scripts\publish_release.ps1`
+
+If `git push` fails with “could not connect to github.com”, check VPN/proxy/firewall; the failure is environmental, not the repo layout.
+
 ## License
 
 Add a `LICENSE` file if you publish publicly.
