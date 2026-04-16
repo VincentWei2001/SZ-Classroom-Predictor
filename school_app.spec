@@ -5,10 +5,7 @@ a = Analysis(
     ['C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\school_app_portable.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\school_app_models.bin', '.'),
-        ('C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\assets\\app_icon.ico', 'assets'),
-    ],
+    datas=[('C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\school_app_models.bin', '.'), ('C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\assets\\app_icon.ico', 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -29,13 +26,13 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    icon='C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\assets\\app_icon.ico',
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['C:\\Users\\GIGABYTE\\Desktop\\Test\\Analysis\\新（可用）\\CSV\\assets\\app_icon.ico'],
 )
 coll = COLLECT(
     exe,
