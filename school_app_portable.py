@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLabel, QComboBox, QGroupBox, QScrollArea, QMessageBox,
                              QSlider, QCheckBox, QInputDialog, QGridLayout, QFileDialog) 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator, QIntValidator
+from PySide6.QtGui import QDoubleValidator, QIntValidator, QIcon
 import xgboost
 import lightgbm
 
@@ -50,6 +50,7 @@ def get_base_path():
 
 
 BASE_PATH = get_base_path()
+APP_ICON_PATH = os.path.join(BASE_PATH, "assets", "app_icon.ico")
 TARGET_KEYS = ["EUI", "sDA", "sGA", "UDI", "SVF"]
 TARGET_DISPLAY = {
     "EUI": "EUI (kWh/m²)",
@@ -3482,6 +3483,11 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V4):
 # %% [Cell 5: 程序启动入口]
 if __name__ == "__main__":
     app = QApplication.instance() or QApplication(sys.argv)
+    if os.path.isfile(APP_ICON_PATH):
+        ic = QIcon(APP_ICON_PATH)
+        app.setWindowIcon(ic)
     main_win = ClassroomPredictorApp()
+    if os.path.isfile(APP_ICON_PATH):
+        main_win.setWindowIcon(QIcon(APP_ICON_PATH))
     main_win.show()
     app.exec()

@@ -9,6 +9,7 @@ from secure_model_bundle import MODEL_BUNDLE_NAME, build_model_bundle
 
 WORKSPACE = Path(__file__).resolve().parent
 PORTABLE_SCRIPT = WORKSPACE / "school_app_portable.py"
+APP_ICON = WORKSPACE / "assets" / "app_icon.ico"
 DIST_DIR = WORKSPACE / "dist" / "school_app"
 ZIP_PATH = WORKSPACE / "school_app_secure_portable.zip"
 EXCLUDED_MODEL_FOLDERS = {
@@ -87,6 +88,9 @@ def main() -> None:
     )
     print(f"已生成加密模型包: {MODEL_BUNDLE_NAME} -> {bundle_info}")
 
+    if not APP_ICON.is_file():
+        raise FileNotFoundError(f"缺少应用图标: {APP_ICON}（可运行 python scripts/build_app_icon.py 生成）")
+
     run(
         [
             sys.executable,
@@ -95,11 +99,15 @@ def main() -> None:
             "--noconfirm",
             "--clean",
             "--windowed",
+            "--icon",
+            str(APP_ICON),
             "--name",
             "school_app",
             "--onedir",
             "--add-data",
             f"{WORKSPACE / MODEL_BUNDLE_NAME};.",
+            "--add-data",
+            f"{APP_ICON};assets",
             str(PORTABLE_SCRIPT),
         ]
     )

@@ -7,6 +7,7 @@ from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parent
 PORTABLE_SCRIPT = WORKSPACE / "school_app_portable.py"
+APP_ICON = WORKSPACE / "assets" / "app_icon.ico"
 DIST_DIR = WORKSPACE / "dist" / "school_app_light"
 ZIP_PATH = WORKSPACE / "school_app_light_portable.zip"
 CONDA_DLLS = [
@@ -75,6 +76,9 @@ def copy_runtime_support_files() -> None:
 
 
 def main() -> None:
+    if not APP_ICON.is_file():
+        raise FileNotFoundError(f"缺少应用图标: {APP_ICON}（可运行 python scripts/build_app_icon.py 生成）")
+
     run(
         [
             sys.executable,
@@ -83,8 +87,12 @@ def main() -> None:
             "--noconfirm",
             "--clean",
             "--windowed",
+            "--icon",
+            str(APP_ICON),
             "--name",
             "school_app_light",
+            "--add-data",
+            f"{APP_ICON};assets",
             str(PORTABLE_SCRIPT),
         ]
     )
