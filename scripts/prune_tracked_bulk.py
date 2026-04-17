@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-KEEP_NOTEBOOK = "预测应用完整版.ipynb"
+KEEP_NOTEBOOK = "classroom_predictor_app.ipynb"
 
 
 def main() -> None:

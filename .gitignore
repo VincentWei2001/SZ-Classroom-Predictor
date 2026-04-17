@@ -30,7 +30,7 @@ __pycache__/
 
 # Only version the canonical app notebook (other .ipynb stay local)
 *.ipynb
-!预测应用完整版.ipynb
+!classroom_predictor_app.ipynb
 
 # OS
 Thumbs.db

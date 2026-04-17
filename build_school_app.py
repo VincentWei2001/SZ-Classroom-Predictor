@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 WORKSPACE = Path(__file__).resolve().parent
-NOTEBOOK_PATH = WORKSPACE / "预测应用完整版.ipynb"
+NOTEBOOK_PATH = WORKSPACE / "classroom_predictor_app.ipynb"
 OUTPUT_SCRIPT_PATH = WORKSPACE / "school_app_portable.py"
 
 BASE_PATH_REPLACEMENT = """

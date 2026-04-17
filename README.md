@@ -13,7 +13,7 @@ Windows desktop app for building-performance prediction (Qt / PySide6, XGBoost /
 
 ## Development
 
-- **Notebook:** `预测应用完整版.ipynb`
+- **Notebook:** `classroom_predictor_app.ipynb`
 - **App icon:** `assets/app_icon.ico` (regenerate with `python scripts/build_app_icon.py`, or replace the file with your own `.ico`).
 - **Export portable script:**  
   `D:\Anaconda\envs\school_app\python.exe build_school_app.py`
@@ -33,7 +33,7 @@ Windows desktop app for building-performance prediction (Qt / PySide6, XGBoost /
 This repo is intentionally **minimal**. The following stay **local only** (see [.gitignore](.gitignore)); they are **not** pushed:
 
 - Trained models: `*.joblib`, SHAP figures, scenario CSV exports (`030*_*.csv`, `031*_*.csv`, etc.), evaluation tables like `模型评估汇总*.csv`
-- Extra notebooks: everything except `预测应用完整版.ipynb`
+- Extra notebooks: everything except `classroom_predictor_app.ipynb`
 - Build outputs: `dist/`, `build/`, `*.zip`, `school_app_models.bin`
 
 **Rebuild the encrypted bundle** (`build_secure_package.py`) on a machine that still has the per-scenario folders with runtime `*.joblib` files locally. **End users** do not need those files; they use the **Release** zip.
