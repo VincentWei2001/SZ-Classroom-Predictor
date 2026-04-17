@@ -1,61 +1,88 @@
 # SZ Classroom Predictor
 
-Windows desktop app for building-performance prediction (Qt / PySide6, XGBoost / LightGBM / scikit-learn stack). Source lives in the Jupyter notebook and exported Python entrypoint; distribution is a PyInstaller folder bundle with an encrypted model archive.
+---
 
-## Download (end users)
+## 简介 · Introduction
 
-**Do not rely on cloning this repo for the runnable app.** Install the latest **`school_app_secure_portable.zip`** from [Releases](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases).
+**中文：** **SZ Classroom Predictor** 是一款在 **Windows** 上运行的桌面应用程序，用于根据教室围护结构、遮阳与采光等参数，对能耗与光环境等指标进行快速预测，辅助方案比选与初步设计评估。
 
-1. Download the zip from Releases.
-2. Extract to a folder (avoid paths that are only special characters).
-3. Run `school_app.exe`.
-4. Keep the `_internal` folder next to the exe; do not move the exe alone.
+**English:** **SZ Classroom Predictor** is a **Windows** desktop application for rapid prediction of energy and daylighting-related metrics from classroom envelope, shading, and daylighting parameters—supporting design comparison and early-stage evaluation.
 
-## Development
+---
 
-- **Notebook:** `classroom_predictor_app.ipynb`
-- **App icon:** `assets/app_icon.ico` (regenerate with `python scripts/build_app_icon.py`, or replace the file with your own `.ico`).
-- **Export portable script:**  
-  `D:\Anaconda\envs\school_app\python.exe build_school_app.py`
-- **Full secure build (exe + embedded `school_app_models.bin`):**  
-  `D:\Anaconda\envs\school_app\python.exe build_secure_package.py`  
-  Output zip at repo root; copy to `github_release/` if you use that layout for publishing.
-- **Conda env:** Python 3.10 (`school_app`), packages as used in your local training stack (PySide6, xgboost, lightgbm, sklearn, etc.).
+## 获取软件 · Obtaining the software
 
-## Repository layout
+**中文：** 本仓库的 **Git 源码不等于可安装程序**。请从 **GitHub Releases** 下载已打包的发行版，在最新版本中获取 **`school_app_secure_portable.zip`**（或页面中说明的同名便携包）。
 
-- `build_secure_package.py` / `build_light_package.py` — packaging automation
-- `secure_model_bundle.py` — builds `school_app_models.bin` (Fernet + zlib)
-- `github_release/` — helper text for maintainers; the release zip is ignored by git (`*.zip`)
+**[前往 Releases 下载页面](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases)**
 
-## What is not in Git (keep on your machine)
+**English:** The **Git repository is not the installable app**. Download the packaged release from **GitHub Releases** and get **`school_app_secure_portable.zip`** (or the portable package named on that page) from the latest release.
 
-This repo is intentionally **minimal**. The following stay **local only** (see [.gitignore](.gitignore)); they are **not** pushed:
+**[Go to Releases](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases)**
 
-- Trained models: `*.joblib`, SHAP figures, scenario CSV exports (`030*_*.csv`, `031*_*.csv`, etc.), evaluation tables like `模型评估汇总*.csv`
-- Extra notebooks: everything except `classroom_predictor_app.ipynb`
-- Build outputs: `dist/`, `build/`, `*.zip`, `school_app_models.bin`
+---
 
-**Rebuild the encrypted bundle** (`build_secure_package.py`) on a machine that still has the per-scenario folders with runtime `*.joblib` files locally. **End users** do not need those files; they use the **Release** zip.
+## 安装与启动 · Installation and launch
 
-To drop previously tracked bulk files from the index after a clone (one-time maintenance), you can run:  
-`python scripts/prune_tracked_bulk.py` then commit.
+**中文：**
 
-## Publishing to GitHub
+1. 将 **ZIP** 解压到本地文件夹（建议使用字母、数字与常见符号路径，避免路径仅含特殊字符）。
+2. 进入解压目录，双击 **`school_app.exe`** 启动。
+3. **请勿**单独移动 `school_app.exe`；须与 **`_internal`** 保持原有相对位置，否则可能无法运行。  
+   本版为便携包，**无需安装 Python**。
 
-Remote is expected to be `https://github.com/VincentWei2001/SZ-Classroom-Predictor.git`.
+**English:**
 
-1. Commit and push: `git push -u origin main` (use a [PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) if HTTPS prompts fail).
-2. **Release zip:** upload `github_release/school_app_secure_portable.zip` on the [Releases](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases) page, or run (PowerShell, with `GITHUB_TOKEN` set):
+1. Extract the **ZIP** to a local folder (prefer paths with letters, numbers, and common symbols).
+2. Open the folder and double-click **`school_app.exe`**.
+3. **Do not** move `school_app.exe` alone; keep **`_internal`** next to it as shipped.  
+   This is a portable build—**no Python installation** is required.
 
-   `.\scripts\publish_release.ps1`
+---
 
-If `git push` fails with “could not connect to github.com”, check VPN/proxy/firewall; the failure is environmental, not the repo layout.
+## 系统要求 · System requirements
 
-## Shrinking an already-large remote history (optional)
+| 中文 | English |
+|------|---------|
+| 操作系统：Windows 10 / 11（64 位） | OS: Windows 10 / 11 (64-bit) |
+| 建议分辨率不低于 1280×720 | Display: 1280×720 or higher recommended |
 
-Stopping tracking files only affects **future** commits; old blobs remain in Git history until you rewrite it. If the GitHub repo is huge from past commits, use [git filter-repo](https://github.com/newren/git-filter-repo) (or BFG Repo-Cleaner) to strip `*.joblib` and other paths from history, then force-push. This is disruptive for collaborators; do it only when necessary.
+---
 
-## License
+## 使用说明 · Usage
 
-Add a `LICENSE` file if you publish publicly.
+**中文：** 启动后在图形界面中选择朝向、遮阳模式等，调整参数后进行预测并查看结果；具体以软件界面为准。
+
+**English:** After launch, choose orientation, shading mode, and other inputs in the GUI, then run predictions and review results; follow on-screen guidance for details.
+
+---
+
+## 常见问题 · FAQ
+
+**中文：**
+
+- **无法启动或缺文件：** 确认已完整解压，且 `school_app.exe` 与 `_internal` 未被安全软件隔离或删除。  
+- **安全软件告警：** 未签名 exe 可能被提示风险；若文件来自本仓库 **Releases** 官方附件，可按环境添加信任或咨询信息化部门。  
+- **是否需要克隆仓库：** 仅使用软件时，只需下载 Releases 压缩包；仓库用于源码公开与交流。
+
+**English:**
+
+- **Won’t start or missing files:** Ensure full extraction and that `school_app.exe` and `_internal` were not quarantined or deleted.  
+- **Antivirus warnings:** Unsigned executables may be flagged; if you downloaded from official **Releases** assets, add an exception if appropriate or consult your IT policy.  
+- **Do I need to clone the repo?** For normal use, download the release ZIP only; the repo is for source code and discussion.
+
+---
+
+## 开源与源码 · Open source
+
+**中文：** 源代码托管于 GitHub；主逻辑见 **`classroom_predictor_app.ipynb`** 及导出脚本，构建与模型打包脚本在仓库根目录。自行构建需要 Python 与相应依赖环境。
+
+**English:** Source is on GitHub; core logic is in **`classroom_predictor_app.ipynb`** and exported scripts, with build scripts at the repository root. Building from source requires Python and the documented dependencies.
+
+---
+
+## 许可协议 · License
+
+**中文：** 若仓库未包含 `LICENSE` 文件，则权利保留；公开发布时建议由权利方补充明确许可条款。
+
+**English:** If no `LICENSE` file is present, all rights are reserved; for public distribution, the rights holder should add explicit license terms.
