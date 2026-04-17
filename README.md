@@ -4,9 +4,23 @@
 
 ## 简介 · Introduction
 
-**中文：** **SZ Classroom Predictor** 是一款在 **Windows** 上运行的桌面应用程序，用于根据教室围护结构、遮阳与采光等参数，对能耗与光环境等指标进行快速预测，辅助方案比选与初步设计评估。
+**中文：** **SZ Classroom Predictor** 是一款在 **Windows** 上运行的桌面应用程序，用于根据教室围护结构、遮阳与采光等参数，对能耗与光环境等指标进行快速预测，辅助方案比选与初步设计评估。**本软件的模型与结论仅适用于深圳地区教室场景**；用于其他城市或建筑类型时，结果仅供参考，不作为设计或审批依据。
 
-**English:** **SZ Classroom Predictor** is a **Windows** desktop application for rapid prediction of energy and daylighting-related metrics from classroom envelope, shading, and daylighting parameters—supporting design comparison and early-stage evaluation.
+**English:** **SZ Classroom Predictor** is a **Windows** desktop application for rapid prediction of energy and daylighting-related metrics from classroom envelope, shading, and daylighting parameters—supporting design comparison and early-stage evaluation. **The bundled models and outputs are intended for classroom buildings in Shenzhen only**; for other cities or building types, treat results as illustrative—not for design sign-off or compliance without local validation.
+
+---
+
+## 适用范围 · Applicability
+
+**中文：**
+
+- 本预测软件所依据的数据与训练设定针对 **深圳市** 相关教室设计语境；**仅推荐在深圳地区教室项目中作为辅助参考工具使用**。  
+- 在深圳以外地区、或非典型教室形式下使用本软件时，预测值可能与实际偏差较大，**请谨慎解读**，必要时应结合当地规范、实测或专项模拟。
+
+**English:**
+
+- The models reflect data and assumptions aligned with **Shenzhen**-context classroom design; **the tool is meant as a supporting reference for classroom projects in Shenzhen**.  
+- Outside Shenzhen or for non-standard classroom typologies, predictions may deviate substantially from reality—**interpret with caution** and validate against local codes, measurements, or dedicated simulation where decisions matter.
 
 ---
 
