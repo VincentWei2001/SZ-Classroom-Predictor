@@ -4,6 +4,17 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+
+# PyInstaller 打包：必须先加载 PySide6，再让 matplotlib 绑定 QtAgg
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QFormLayout, QLineEdit, QPushButton, 
+                             QLabel, QComboBox, QGroupBox, QScrollArea, QMessageBox,
+                             QSlider, QCheckBox, QInputDialog, QGridLayout, QFileDialog) 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QDoubleValidator, QIntValidator, QIcon
+
+import matplotlib
+matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager as fm
 from matplotlib.patches import Patch
@@ -11,12 +22,6 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QFormLayout, QLineEdit, QPushButton, 
-                             QLabel, QComboBox, QGroupBox, QScrollArea, QMessageBox,
-                             QSlider, QCheckBox, QInputDialog, QGridLayout, QFileDialog) 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator, QIntValidator, QIcon
 import xgboost
 import lightgbm
 
@@ -43,13 +48,57 @@ def configure_matplotlib_chinese_font():
 MATPLOTLIB_CJK_FONT = configure_matplotlib_chinese_font()
 
 # ================== 1. 全局配置 ==================
+# 模型文件夹与资源均已迁移至 “机器学习的模型与开发的程序” 目录下
+from pathlib import Path
+
+
 def get_base_path():
     if getattr(sys, "frozen", False):
         return os.path.dirname(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
-    return os.path.dirname(os.path.abspath(__file__))
+    return str(Path(__file__).resolve().parent.parent)
 
 
 BASE_PATH = get_base_path()
+
+
+def _list_model_folders(base_path):
+    src_dir = os.path.join(base_path, "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    from scenario_registry import list_available_scenarios
+
+    scenarios = list_available_scenarios(base_path)
+    if scenarios:
+        return scenarios
+    try:
+        from secure_model_bundle import list_bundled_model_folders, model_bundle_exists
+
+        if model_bundle_exists(base_path):
+            return list_bundled_model_folders(base_path)
+    except Exception:
+        pass
+    return scenarios
+
+
+def _load_model_file(folder_marker, filename):
+    if os.path.isdir(folder_marker):
+        return joblib.load(os.path.join(folder_marker, filename))
+    nested = os.path.join(folder_marker, filename)
+    if os.path.isfile(nested):
+        return joblib.load(nested)
+    try:
+        from secure_model_bundle import load_bundled_model
+    except Exception as exc:
+        raise FileNotFoundError(
+            f"未找到模型文件: {folder_marker} / {filename}"
+        ) from exc
+    folder_name = os.path.basename(str(folder_marker).rstrip("\/")) or str(folder_marker)
+    return load_bundled_model(BASE_PATH, folder_name, filename)
+
+_src_dir = os.path.join(BASE_PATH, "src")
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
+from scenario_registry import SCENARIO_FOLDERS, list_available_scenarios
 APP_ICON_PATH = os.path.join(BASE_PATH, "assets", "app_icon.ico")
 TARGET_KEYS = ["EUI", "sDA", "sGA", "UDI", "SVF"]
 TARGET_DISPLAY = {
@@ -72,7 +121,7 @@ FEATURE_META = {
     'WWR_s_exp': {'symbol': 'WWRs',  'label': '外窗侧窗墙比', 'unit': '%',  'min': 30,   'max': 70,   'step': 5},
     'WWR_s':     {'symbol': 'WWRs',  'label': '外窗侧窗墙比', 'unit': '%',  'min': 30,   'max': 70,   'step': 5},
     'H_s':       {'symbol': 'Hs',    'label': '窗高',         'unit': 'm',  'min': 1.2,  'max': 2.6,  'step': 0.1},
-    'W_s':       {'symbol': 'Ws',    'label': '窗宽',         'unit': 'm',  'min': 4.0,  'max': 7.8,  'step': 0.1},
+    'W_s':       {'symbol': 'Ws',    'label': '窗宽',         'unit': 'm',  'min': 0.1,  'max': 7.8,  'step': 0.1},
     'SH_s':      {'symbol': 'SHs',   'label': '窗台高度',     'unit': 'm',  'min': 0.4,  'max': 1.0,  'step': 0.1},
     'd_A_s':     {'symbol': 'dA,s',  'label': '采光窗左距',   'unit': 'm',  'min': 1.0,  'max': 8.0,  'step': 0.1},
     'd_B_s':     {'symbol': 'dB,s',  'label': '采光窗右距',   'unit': 'm',  'min': 0.2,  'max': 8.0,  'step': 0.1},
@@ -105,6 +154,14 @@ SHADE_FEATURE_MAP = {
     "组合 (O+V)": FEATURE_ORDER[1:13] + FEATURE_ORDER[17:25]
 }
 
+# 左侧「设计变量」分组（与 FEATURE_ORDER 切片一致：采光窗 / 走廊窗 / 遮阳）
+PARAM_SECTIONS = [
+    ("采光窗", FEATURE_ORDER[0:7]),
+    ("走廊窗", FEATURE_ORDER[7:13]),
+    ("遮阳相关", FEATURE_ORDER[13:]),
+]
+
+
 # 部分早期模型训练时使用了不同列名，此映射将训练列名解析为代码内部统一名称
 FEATURE_ALIAS = {
     'Frame_BL': 'F_BL',
@@ -112,6 +169,60 @@ FEATURE_ALIAS = {
     'Frame_TR': 'F_TR',
     'Frame_TL': 'F_TL',
 }
+
+# geometry_engine 修正后需同步到左侧控件的字段（预测回写、仅刷新 3D 时共用）
+GEOMETRY_WRITEBACK_KEYS = (
+    'WWR_c', 'WWR_s', 'H_s', 'W_s', 'W_c',
+    'SH_s', 'SH_c', 'd_A_s', 'd_B_s', 'd_A_c', 'd_B_c',
+    'L_oh', 'd_mv', 'M_TL', 'M_TR', 'N_v',
+)
+
+
+def sync_geometry_results_to_ui(window, cal_data):
+    """将 geometry_engine 输出同步到窗口参数控件（全滑条版 / 早期 QLineEdit 混排）"""
+    if not cal_data or not hasattr(window, 'inputs'):
+        return
+    inputs = window.inputs
+    rows = getattr(window, 'rows', {})
+    if hasattr(window, 'set_feature_value'):
+        for key in GEOMETRY_WRITEBACK_KEYS:
+            if key in cal_data and key in inputs:
+                window.set_feature_value(key, cal_data[key])
+        return
+
+    w_wwrc = inputs.get('WWR_c')
+    if w_wwrc is not None and isinstance(w_wwrc, QSlider):
+        w_wwrc.blockSignals(True)
+        w_wwrc.setValue(int(cal_data['WWR_c']))
+        _, _, lbl_c = rows.get('WWR_c', (None, None, None))
+        if lbl_c:
+            lbl_c.setText(f"{cal_data['WWR_c']}%")
+        w_wwrc.blockSignals(False)
+
+    w_wwrs = inputs.get('WWR_s')
+    if w_wwrs is not None:
+        if isinstance(w_wwrs, QSlider):
+            w_wwrs.blockSignals(True)
+            w_wwrs.setValue(int(cal_data['WWR_s']))
+            _, _, slbl_s = rows.get('WWR_s', (None, None, None))
+            if slbl_s:
+                slbl_s.setText(f"{cal_data['WWR_s']}%")
+            w_wwrs.blockSignals(False)
+        else:
+            w_wwrs.setText(str(cal_data['WWR_s']))
+
+    for f in GEOMETRY_WRITEBACK_KEYS[2:]:
+        if f not in cal_data or f not in inputs:
+            continue
+        w = inputs[f]
+        if isinstance(w, QSlider):
+            continue
+        val = cal_data[f]
+        if f == 'N_v':
+            w.setText(str(int(val)))
+        else:
+            w.setText(str(val))
+
 
 ORI_LIST = ["南向 (South 0°)", "北向 (North 0°)"]
 SHADE_LIST = ["基准 (Base)", "悬挑 (Overhang)", "垂直 (Vertical)", "组合 (O+V)", "框式 (Frame)"]
@@ -213,12 +324,20 @@ def geometry_engine(ui, mode):
     total_opening_w = min(total_opening_w, wl)
 
     if is_vertical_mode:
-        nv = max(2, int(safe_float('N_v', 2)))
-        net_glass_w_theory = max(0.1, total_opening_w - (nv - 1) * wv)
-        ws_pane = round(net_glass_w_theory / max(1, nv - 1), 1)
-        net_glass_w_actual = ws_pane * (nv - 1)
+        # 垂直遮阳划分后的单扇窗宽 W_s 不低于 0.8 m（总开口与 W_v 限制最大分格数）
+        MIN_WS_PANE = 0.8
+        nv_req = max(2, int(safe_float('N_v', 2)))
+        k = nv_req - 1
+        k_cap = max(1, int(total_opening_w / (MIN_WS_PANE + wv + 1e-12)))
+        k = min(k, k_cap)
+        nv = k + 1
+        net_glass_w_theory = max(0.01, total_opening_w - k * wv)
+        ws_pane = round(net_glass_w_theory / k, 1)
+        if ws_pane + 1e-9 < MIN_WS_PANE:
+            ws_pane = MIN_WS_PANE
+        net_glass_w_actual = ws_pane * k
         actual_wwr_s = round((net_glass_w_actual * hs_actual / wa) * 100.0)
-        total_opening_w_actual = net_glass_w_actual + (nv - 1) * wv
+        total_opening_w_actual = net_glass_w_actual + k * wv
     else:
         nv = 0
         ws_pane = round(total_opening_w, 1)
@@ -422,27 +541,13 @@ class ClassroomPredictorApp(QMainWindow):
         if not os.path.exists(BASE_PATH):
             return
 
-        folders = [d for d in os.listdir(BASE_PATH) if os.path.isdir(os.path.join(BASE_PATH, d))]
-        for f in folders:
-            ori = ORI_LIST[0] if "South0°" in f else (ORI_LIST[1] if "North0°" in f else None)
-            if not ori:
+        for rel in list_available_scenarios(BASE_PATH):
+            folder_id = os.path.basename(rel.replace("\\", "/"))
+            mapping = SCENARIO_FOLDERS.get(folder_id)
+            if not mapping:
                 continue
-
-            sha = SHADE_LIST[0]
-            if "Overhang+Vertical" in f:
-                sha = SHADE_LIST[3]
-            elif "Overhang" in f:
-                sha = SHADE_LIST[1]
-            elif "Vertical" in f:
-                sha = SHADE_LIST[2]
-            elif "Frame" in f:
-                sha = SHADE_LIST[4]
-            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, f)
-
-        preferred_folder = "0312_2000_North0°_Overhang+Vertical(1)_replaced"
-        preferred_path = os.path.join(BASE_PATH, preferred_folder)
-        if os.path.isdir(preferred_path):
-            self.model_map[(ORI_LIST[1], SHADE_LIST[3])] = preferred_path
+            ori, sha = mapping
+            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, rel)
 
     def get_feature_value(self, feat):
         w = self.inputs[feat]
@@ -506,56 +611,62 @@ class ClassroomPredictorApp(QMainWindow):
 
         grp_param = QGroupBox("2. 设计变量")
         self.param_form = QFormLayout(grp_param)
-        for f in FEATURE_ORDER:
-            meta = FEATURE_META.get(f, {'symbol': f, 'label': f, 'range': '', 'type': 'float', 'min': 0.0, 'max': 999.0})
-            lbl = QLabel(f"{meta['symbol']} {meta['label']}:")
-            if meta.get('range'):
-                lbl.setToolTip(f"取值范围: {meta['range']}")
+        self._param_section_headers = []
+        for section_title, section_feats in PARAM_SECTIONS:
+            sec_lbl = QLabel(section_title)
+            sec_lbl.setStyleSheet("font-weight: bold; color: #2c3e50; margin-top: 8px;")
+            self.param_form.addRow(sec_lbl)
+            self._param_section_headers.append((sec_lbl, tuple(section_feats)))
+            for f in section_feats:
+                meta = FEATURE_META.get(f, {'symbol': f, 'label': f, 'range': '', 'type': 'float', 'min': 0.0, 'max': 999.0})
+                lbl = QLabel(f"{meta['symbol']} {meta['label']}:")
+                if meta.get('range'):
+                    lbl.setToolTip(f"取值范围: {meta['range']}")
 
-            row_widget = QWidget(grp_param)
-            row_widget.setToolTip(f"取值范围: {meta['range']}")
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
+                row_widget = QWidget(grp_param)
+                row_widget.setToolTip(f"取值范围: {meta['range']}")
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 0, 0, 0)
 
-            if meta.get('type') == 'percent':
-                slider = QSlider(Qt.Horizontal, row_widget)
-                slider.setRange(int(meta['min']), int(meta['max']))
-                slider.setSingleStep(int(meta.get('step', 1)))
-                slider.setTickPosition(QSlider.TicksBelow)
-                slider.setTickInterval(int(meta.get('step', 1)))
+                if meta.get('type') == 'percent':
+                    slider = QSlider(Qt.Horizontal, row_widget)
+                    slider.setRange(int(meta['min']), int(meta['max']))
+                    slider.setSingleStep(int(meta.get('step', 1)))
+                    slider.setTickPosition(QSlider.TicksBelow)
+                    slider.setTickInterval(int(meta.get('step', 1)))
 
-                val_lbl = QLabel(f"{slider.value()}%", row_widget)
-                val_lbl.setFixedWidth(50)
-                val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
+                    val_lbl = QLabel(f"{slider.value()}%", row_widget)
+                    val_lbl.setFixedWidth(50)
+                    val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
 
-                def make_snap(s=slider, l=val_lbl, step=int(meta.get('step', 1))):
-                    def snap(v):
-                        sn = round(v / step) * step
-                        s.blockSignals(True)
-                        s.setValue(sn)
-                        s.blockSignals(False)
-                        l.setText(f"{sn}%")
-                    return snap
+                    def make_snap(s=slider, l=val_lbl, step=int(meta.get('step', 1))):
+                        def snap(v):
+                            sn = round(v / step) * step
+                            s.blockSignals(True)
+                            s.setValue(sn)
+                            s.blockSignals(False)
+                            l.setText(f"{sn}%")
+                        return snap
 
-                slider.valueChanged.connect(make_snap())
-                slider.sliderReleased.connect(self.invalidate_prediction)
-                row_layout.addWidget(slider)
-                row_layout.addWidget(val_lbl)
-                self.inputs[f], self.rows[f] = slider, (lbl, row_widget, val_lbl)
-            else:
-                edit = QLineEdit("0", row_widget)
-                edit.setPlaceholderText(meta.get('range', ''))
-                if meta.get('type') == 'int':
-                    edit.setValidator(QIntValidator(int(meta['min']), int(meta['max']), edit))
+                    slider.valueChanged.connect(make_snap())
+                    slider.sliderReleased.connect(self.invalidate_prediction)
+                    row_layout.addWidget(slider)
+                    row_layout.addWidget(val_lbl)
+                    self.inputs[f], self.rows[f] = slider, (lbl, row_widget, val_lbl)
                 else:
-                    validator = QDoubleValidator(float(meta['min']), float(meta['max']), int(meta.get('decimals', 2)), edit)
-                    validator.setNotation(QDoubleValidator.StandardNotation)
-                    edit.setValidator(validator)
-                edit.textEdited.connect(self.invalidate_prediction)
-                row_layout.addWidget(edit)
-                self.inputs[f], self.rows[f] = edit, (lbl, row_widget, None)
+                    edit = QLineEdit("0", row_widget)
+                    edit.setPlaceholderText(meta.get('range', ''))
+                    if meta.get('type') == 'int':
+                        edit.setValidator(QIntValidator(int(meta['min']), int(meta['max']), edit))
+                    else:
+                        validator = QDoubleValidator(float(meta['min']), float(meta['max']), int(meta.get('decimals', 2)), edit)
+                        validator.setNotation(QDoubleValidator.StandardNotation)
+                        edit.setValidator(validator)
+                    edit.textEdited.connect(self.invalidate_prediction)
+                    row_layout.addWidget(edit)
+                    self.inputs[f], self.rows[f] = edit, (lbl, row_widget, None)
 
-            self.param_form.addRow(lbl, row_widget)
+                self.param_form.addRow(lbl, row_widget)
         vbox.addWidget(grp_param)
 
         grp_display = QGroupBox("3. 环境显示")
@@ -818,6 +929,11 @@ class ClassroomPredictorApp(QMainWindow):
             lbl.setVisible(vis)
             row_widget.setVisible(vis)
 
+        for hdr, feats in getattr(self, '_param_section_headers', []):
+            hdr.setVisible(any(
+                (ff in active_list or (ff == 'WWR_s_exp' and is_p)) for ff in feats
+            ))
+
             if f == 'WWR_s':
                 main_ctrl = self.inputs[f]
                 if isinstance(main_ctrl, QSlider):
@@ -833,6 +949,7 @@ class ClassroomPredictorApp(QMainWindow):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         saved_elev, saved_azim = self.ax.elev, self.ax.azim
         draw_classroom_3d(
             self.ax,
@@ -895,48 +1012,7 @@ class ClassroomPredictorApp(QMainWindow):
                         f"已按比例自动缩放：M_TL = {cal_data['M_TL']},  M_TR = {cal_data['M_TR']}"
                     )
 
-            w_wwrc = self.inputs['WWR_c']
-            if isinstance(w_wwrc, QSlider):
-                w_wwrc.blockSignals(True)
-                w_wwrc.setValue(cal_data['WWR_c'])
-                _, _, lbl_c = self.rows['WWR_c']
-                if lbl_c:
-                    lbl_c.setText(f"{cal_data['WWR_c']}%")
-                w_wwrc.blockSignals(False)
-
-            w_wwrs = self.inputs['WWR_s']
-            if isinstance(w_wwrs, QSlider):
-                w_wwrs.blockSignals(True)
-                w_wwrs.setValue(cal_data['WWR_s'])
-                _, _, slbl_s = self.rows['WWR_s']
-                if slbl_s:
-                    slbl_s.setText(f"{cal_data['WWR_s']}%")
-                w_wwrs.blockSignals(False)
-            else:
-                w_wwrs.setText(str(cal_data['WWR_s']))
-
-            if 'H_s' in self.inputs:
-                self.inputs['H_s'].setText(str(cal_data['H_s']))
-            if 'W_c' in self.inputs:
-                self.inputs['W_c'].setText(str(cal_data['W_c']))
-            if 'W_s' in self.inputs:
-                self.inputs['W_s'].setText(str(cal_data['W_s']))
-            if 'SH_s' in self.inputs:
-                self.inputs['SH_s'].setText(str(cal_data['SH_s']))
-            if 'SH_c' in self.inputs:
-                self.inputs['SH_c'].setText(str(cal_data['SH_c']))
-            if 'd_A_s' in self.inputs:
-                self.inputs['d_A_s'].setText(str(cal_data['d_A_s']))
-            if 'd_B_s' in self.inputs:
-                self.inputs['d_B_s'].setText(str(cal_data['d_B_s']))
-            if 'L_oh' in self.inputs:
-                self.inputs['L_oh'].setText(str(cal_data['L_oh']))
-            if 'd_mv' in self.inputs:
-                self.inputs['d_mv'].setText(str(cal_data['d_mv']))
-            if 'M_TL' in self.inputs:
-                self.inputs['M_TL'].setText(str(cal_data['M_TL']))
-            if 'M_TR' in self.inputs:
-                self.inputs['M_TR'].setText(str(cal_data['M_TR']))
+            sync_geometry_results_to_ui(self, cal_data)
 
             active_feats = SHADE_FEATURE_MAP.get(sha_mode, FEATURE_ORDER[1:13])
             X = pd.DataFrame([[cal_data[f] for f in active_feats]], columns=active_feats)
@@ -944,7 +1020,7 @@ class ClassroomPredictorApp(QMainWindow):
             ckey = (ori_mode, sha_mode)
             if ckey not in self.model_cache:
                 self.model_cache[ckey] = {
-                    f"{t}_{m}": joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib"))
+                    f"{t}_{m}": _load_model_file(folder, f"{m}_model_{t}.joblib")
                     for t in TARGET_KEYS for m in ["xgb", "lgbm", "rf", "meta"]
                 }
 
@@ -1013,22 +1089,13 @@ class ClassroomPredictorApp(QMainWindow):
 
     def scan_folders(self):
         if not os.path.exists(BASE_PATH): return
-        folders = [d for d in os.listdir(BASE_PATH) if os.path.isdir(os.path.join(BASE_PATH, d))]
-        for f in folders:
-            ori = ORI_LIST[0] if "South0°" in f else (ORI_LIST[1] if "North0°" in f else None)
-            if not ori: continue
-            sha = SHADE_LIST[0]
-            if "Overhang+Vertical" in f: sha = SHADE_LIST[3]
-            elif "Overhang" in f: sha = SHADE_LIST[1]
-            elif "Vertical" in f: sha = SHADE_LIST[2]
-            elif "Frame" in f: sha = SHADE_LIST[4]
-            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, f)
-
-        # 北向组合遮阳固定使用替换后的模型目录
-        preferred_folder = "0312_2000_North0°_Overhang+Vertical(1)_replaced"
-        preferred_path = os.path.join(BASE_PATH, preferred_folder)
-        if os.path.isdir(preferred_path):
-            self.model_map[(ORI_LIST[1], SHADE_LIST[3])] = preferred_path
+        for rel in list_available_scenarios(BASE_PATH):
+            folder_id = os.path.basename(rel.replace("\\", "/"))
+            mapping = SCENARIO_FOLDERS.get(folder_id)
+            if not mapping:
+                continue
+            ori, sha = mapping
+            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, rel)
 
     def get_feature_value(self, feat):
         w = self.inputs[feat]
@@ -1079,48 +1146,54 @@ class ClassroomPredictorApp(QMainWindow):
 
         # 2. 设计变量
         grp_param = QGroupBox("2. 设计变量"); self.param_form = QFormLayout(grp_param)
-        for f in FEATURE_ORDER:
-            meta = FEATURE_META.get(f, {'symbol': f, 'label': f, 'range': '', 'type': 'float', 'min': 0.0, 'max': 999.0})
-            lbl = QLabel(f"{meta['symbol']} {meta['label']}:")
-            if meta.get('range'):
-                lbl.setToolTip(f"取值范围: {meta['range']}")
-            row_widget = QWidget(grp_param)
-            row_widget.setToolTip(f"取值范围: {meta['range']}")
-            row_layout = QHBoxLayout(row_widget); row_layout.setContentsMargins(0, 0, 0, 0)
-            
-            if meta.get('type') == 'percent':
-                slider = QSlider(Qt.Horizontal, row_widget)
-                slider.setRange(int(meta['min']), int(meta['max']))
-                slider.setSingleStep(int(meta.get('step', 1)))
-                slider.setTickPosition(QSlider.TicksBelow)
-                slider.setTickInterval(int(meta.get('step', 1)))
+        self._param_section_headers = []
+        for section_title, section_feats in PARAM_SECTIONS:
+            sec_lbl = QLabel(section_title)
+            sec_lbl.setStyleSheet("font-weight: bold; color: #2c3e50; margin-top: 8px;")
+            self.param_form.addRow(sec_lbl)
+            self._param_section_headers.append((sec_lbl, tuple(section_feats)))
+            for f in section_feats:
+                meta = FEATURE_META.get(f, {'symbol': f, 'label': f, 'range': '', 'type': 'float', 'min': 0.0, 'max': 999.0})
+                lbl = QLabel(f"{meta['symbol']} {meta['label']}:")
+                if meta.get('range'):
+                    lbl.setToolTip(f"取值范围: {meta['range']}")
+                row_widget = QWidget(grp_param)
+                row_widget.setToolTip(f"取值范围: {meta['range']}")
+                row_layout = QHBoxLayout(row_widget); row_layout.setContentsMargins(0, 0, 0, 0)
                 
-                val_lbl = QLabel(f"{slider.value()}%", row_widget)
-                val_lbl.setFixedWidth(50); val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
-                
-                def make_snap(s=slider, l=val_lbl, step=int(meta.get('step', 1))):
-                    def snap(v):
-                        sn = round(v / step) * step
-                        s.blockSignals(True); s.setValue(sn); s.blockSignals(False)
-                        l.setText(f"{sn}%")
-                    return snap
-                
-                slider.valueChanged.connect(make_snap())
-                row_layout.addWidget(slider); row_layout.addWidget(val_lbl)
-                self.inputs[f], self.rows[f] = slider, (lbl, row_widget, val_lbl)
-            else:
-                edit = QLineEdit("0", row_widget)
-                edit.setPlaceholderText(meta.get('range', ''))
-                if meta.get('type') == 'int':
-                    edit.setValidator(QIntValidator(int(meta['min']), int(meta['max']), edit))
+                if meta.get('type') == 'percent':
+                    slider = QSlider(Qt.Horizontal, row_widget)
+                    slider.setRange(int(meta['min']), int(meta['max']))
+                    slider.setSingleStep(int(meta.get('step', 1)))
+                    slider.setTickPosition(QSlider.TicksBelow)
+                    slider.setTickInterval(int(meta.get('step', 1)))
+                    
+                    val_lbl = QLabel(f"{slider.value()}%", row_widget)
+                    val_lbl.setFixedWidth(50); val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
+                    
+                    def make_snap(s=slider, l=val_lbl, step=int(meta.get('step', 1))):
+                        def snap(v):
+                            sn = round(v / step) * step
+                            s.blockSignals(True); s.setValue(sn); s.blockSignals(False)
+                            l.setText(f"{sn}%")
+                        return snap
+                    
+                    slider.valueChanged.connect(make_snap())
+                    row_layout.addWidget(slider); row_layout.addWidget(val_lbl)
+                    self.inputs[f], self.rows[f] = slider, (lbl, row_widget, val_lbl)
                 else:
-                    validator = QDoubleValidator(float(meta['min']), float(meta['max']), int(meta.get('decimals', 2)), edit)
-                    validator.setNotation(QDoubleValidator.StandardNotation)
-                    edit.setValidator(validator)
-                row_layout.addWidget(edit)
-                self.inputs[f], self.rows[f] = edit, (lbl, row_widget, None)
-            
-            self.param_form.addRow(lbl, row_widget)
+                    edit = QLineEdit("0", row_widget)
+                    edit.setPlaceholderText(meta.get('range', ''))
+                    if meta.get('type') == 'int':
+                        edit.setValidator(QIntValidator(int(meta['min']), int(meta['max']), edit))
+                    else:
+                        validator = QDoubleValidator(float(meta['min']), float(meta['max']), int(meta.get('decimals', 2)), edit)
+                        validator.setNotation(QDoubleValidator.StandardNotation)
+                        edit.setValidator(validator)
+                    row_layout.addWidget(edit)
+                    self.inputs[f], self.rows[f] = edit, (lbl, row_widget, None)
+                
+                self.param_form.addRow(lbl, row_widget)
         vbox.addWidget(grp_param)
         
         # 3. 环境显示控制 (打勾后自动重绘 3D，不需要跑模型)
@@ -1184,6 +1257,11 @@ class ClassroomPredictorApp(QMainWindow):
             vis = f in active_list or (f == 'WWR_s_exp' and is_p)
             lbl.setVisible(vis); row_widget.setVisible(vis)
             
+        for hdr, feats in getattr(self, '_param_section_headers', []):
+            hdr.setVisible(any(
+                (ff in active_list or (ff == 'WWR_s_exp' and is_p)) for ff in feats
+            ))
+
             if f == 'WWR_s':
                 main_ctrl = self.inputs[f]
                 if isinstance(main_ctrl, QSlider): main_ctrl.setEnabled(not is_p)
@@ -1197,6 +1275,7 @@ class ClassroomPredictorApp(QMainWindow):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         saved_elev, saved_azim = self.ax.elev, self.ax.azim
         draw_classroom_3d(self.ax, cal_data, sha_mode, self.chk_upper.isChecked(), self.chk_side.isChecked())
         self.ax.view_init(elev=saved_elev, azim=saved_azim)
@@ -1241,34 +1320,7 @@ class ClassroomPredictorApp(QMainWindow):
                         f"  合计 = {round(input_mtl + input_mtr, 2)}  >  W_v = {wv_val}\n\n"
                         f"已按比例自动缩放：M_TL = {cal_data['M_TL']},  M_TR = {cal_data['M_TR']}")
 
-            # --- 回写界面数据 ---
-            w_wwrc = self.inputs['WWR_c']
-            if isinstance(w_wwrc, QSlider):
-                w_wwrc.blockSignals(True); w_wwrc.setValue(cal_data['WWR_c'])
-                _, _, lbl_c = self.rows['WWR_c']
-                if lbl_c: lbl_c.setText(f"{cal_data['WWR_c']}%")
-                w_wwrc.blockSignals(False)
-            
-            w_wwrs = self.inputs['WWR_s']
-            if isinstance(w_wwrs, QSlider):
-                w_wwrs.blockSignals(True); w_wwrs.setValue(cal_data['WWR_s'])
-                _, _, slbl_s = self.rows['WWR_s']
-                if slbl_s: slbl_s.setText(f"{cal_data['WWR_s']}%")
-                w_wwrs.blockSignals(False)
-            else: w_wwrs.setText(str(cal_data['WWR_s']))
-            
-            # 将物理限制自动回写
-            if 'H_s' in self.inputs: self.inputs['H_s'].setText(str(cal_data['H_s']))
-            if 'W_c' in self.inputs: self.inputs['W_c'].setText(str(cal_data['W_c']))
-            if 'W_s' in self.inputs: self.inputs['W_s'].setText(str(cal_data['W_s']))
-            if 'SH_s' in self.inputs: self.inputs['SH_s'].setText(str(cal_data['SH_s']))
-            if 'SH_c' in self.inputs: self.inputs['SH_c'].setText(str(cal_data['SH_c']))
-            if 'd_A_s' in self.inputs: self.inputs['d_A_s'].setText(str(cal_data['d_A_s']))
-            if 'd_B_s' in self.inputs: self.inputs['d_B_s'].setText(str(cal_data['d_B_s']))
-            if 'L_oh' in self.inputs: self.inputs['L_oh'].setText(str(cal_data['L_oh']))
-            if 'd_mv' in self.inputs: self.inputs['d_mv'].setText(str(cal_data['d_mv']))
-            if 'M_TL' in self.inputs: self.inputs['M_TL'].setText(str(cal_data['M_TL']))
-            if 'M_TR' in self.inputs: self.inputs['M_TR'].setText(str(cal_data['M_TR']))
+            sync_geometry_results_to_ui(self, cal_data)
             
             # --- 执行 Stacking 预测 ---
             active_feats = SHADE_FEATURE_MAP.get(sha_mode, FEATURE_ORDER[1:13])
@@ -1276,7 +1328,7 @@ class ClassroomPredictorApp(QMainWindow):
             
             ckey = (self.cb_ori.currentText(), sha_mode)
             if ckey not in self.model_cache:
-                self.model_cache[ckey] = {f"{t}_{m}": joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib")) 
+                self.model_cache[ckey] = {f"{t}_{m}": _load_model_file(folder, f"{m}_model_{t}.joblib") 
                                           for t in TARGET_KEYS for m in ["xgb", "lgbm", "rf", "meta"]}
             
             mc = self.model_cache[ckey]
@@ -1350,26 +1402,13 @@ class ClassroomPredictorApp(QMainWindow):
     def scan_folders(self):
         if not os.path.exists(BASE_PATH):
             return
-        folders = [d for d in os.listdir(BASE_PATH) if os.path.isdir(os.path.join(BASE_PATH, d))]
-        for f in folders:
-            ori = ORI_LIST[0] if "South0°" in f else (ORI_LIST[1] if "North0°" in f else None)
-            if not ori:
+        for rel in list_available_scenarios(BASE_PATH):
+            folder_id = os.path.basename(rel.replace("\\", "/"))
+            mapping = SCENARIO_FOLDERS.get(folder_id)
+            if not mapping:
                 continue
-            sha = SHADE_LIST[0]
-            if "Overhang+Vertical" in f:
-                sha = SHADE_LIST[3]
-            elif "Overhang" in f:
-                sha = SHADE_LIST[1]
-            elif "Vertical" in f:
-                sha = SHADE_LIST[2]
-            elif "Frame" in f:
-                sha = SHADE_LIST[4]
-            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, f)
-
-        preferred_folder = "0312_2000_North0°_Overhang+Vertical(1)_replaced"
-        preferred_path = os.path.join(BASE_PATH, preferred_folder)
-        if os.path.isdir(preferred_path):
-            self.model_map[(ORI_LIST[1], SHADE_LIST[3])] = preferred_path
+            ori, sha = mapping
+            self.model_map[(ori, sha)] = os.path.join(BASE_PATH, rel)
 
     def get_feature_value(self, feat):
         """从滑杆读取实际浮点值"""
@@ -1432,56 +1471,72 @@ class ClassroomPredictorApp(QMainWindow):
         self.cb_export_fmt.addItems(["OBJ + MTL", "3DS (3D Studio)"])
         self.cb_export_fmt.setFixedHeight(42)
         self.cb_export_fmt.setFixedWidth(160)
+        self.cb_export_unit = QComboBox()
+        self.cb_export_unit.addItems([label for label, *_ in EXPORT_UNIT_OPTIONS])
+        self.cb_export_unit.setCurrentIndex(1)
+        self.cb_export_unit.setFixedHeight(42)
+        self.cb_export_unit.setMinimumWidth(200)
+        self.cb_export_unit.setToolTip(
+            "SketchUp 导入 OBJ 常默认按英寸读入；选「SketchUp」可得约 9m×9m×3.8m。"
+            "Rhino/Blender 请选「米」。"
+        )
         export_row.addWidget(self.btn_export)
         export_row.addWidget(self.cb_export_fmt)
+        export_row.addWidget(self.cb_export_unit)
         export_outer.addLayout(export_row)
         vbox.addWidget(grp_export)
 
         grp_param = QGroupBox("2. 设计变量")
         self.param_form = QFormLayout(grp_param)
 
-        for feat in FEATURE_ORDER:
-            meta = FEATURE_META[feat]
-            step = meta['step']
-            unit = meta['unit']
-            lo = meta['min']
-            hi = meta['max']
+        self._param_section_headers = []
+        for section_title, section_feats in PARAM_SECTIONS:
+            sec_lbl = QLabel(section_title)
+            sec_lbl.setStyleSheet("font-weight: bold; color: #2c3e50; margin-top: 8px;")
+            self.param_form.addRow(sec_lbl)
+            self._param_section_headers.append((sec_lbl, tuple(section_feats)))
+            for feat in section_feats:
+                meta = FEATURE_META[feat]
+                step = meta['step']
+                unit = meta['unit']
+                lo = meta['min']
+                hi = meta['max']
 
-            lbl = QLabel(f"{meta['symbol']}  {meta['label']}:")
-            lbl.setToolTip(f"{lo} ~ {hi} {unit}  (步长 {step})")
+                lbl = QLabel(f"{meta['symbol']}  {meta['label']}:")
+                lbl.setToolTip(f"{lo} ~ {hi} {unit}  (步长 {step})")
 
-            row_widget = QWidget(grp_param)
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
+                row_widget = QWidget(grp_param)
+                row_layout = QHBoxLayout(row_widget)
+                row_layout.setContentsMargins(0, 0, 0, 0)
 
-            slider = QSlider(Qt.Horizontal, row_widget)
-            i_lo = _slider_int(lo, step)
-            i_hi = _slider_int(hi, step)
-            slider.setRange(i_lo, i_hi)
-            slider.setSingleStep(1)
-            slider.setTickPosition(QSlider.TicksBelow)
-            tick_count = i_hi - i_lo
-            tick_interval = max(1, tick_count // 10)
-            slider.setTickInterval(tick_interval)
+                slider = QSlider(Qt.Horizontal, row_widget)
+                i_lo = _slider_int(lo, step)
+                i_hi = _slider_int(hi, step)
+                slider.setRange(i_lo, i_hi)
+                slider.setSingleStep(1)
+                slider.setTickPosition(QSlider.TicksBelow)
+                tick_count = i_hi - i_lo
+                tick_interval = max(1, tick_count // 10)
+                slider.setTickInterval(tick_interval)
 
-            init_real = lo
-            val_lbl = QLabel(_format_val(init_real, step, unit), row_widget)
-            val_lbl.setFixedWidth(80)
-            val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
+                init_real = lo
+                val_lbl = QLabel(_format_val(init_real, step, unit), row_widget)
+                val_lbl.setFixedWidth(80)
+                val_lbl.setStyleSheet("color: #2980b9; font-weight: bold;")
 
-            def make_update(s=slider, l=val_lbl, st=step, u=unit):
-                def on_change(v):
-                    l.setText(_format_val(_slider_real(v, st), st, u))
-                return on_change
+                def make_update(s=slider, l=val_lbl, st=step, u=unit):
+                    def on_change(v):
+                        l.setText(_format_val(_slider_real(v, st), st, u))
+                    return on_change
 
-            slider.valueChanged.connect(make_update())
-            slider.valueChanged.connect(self.invalidate_prediction)
+                slider.valueChanged.connect(make_update())
+                slider.valueChanged.connect(self.invalidate_prediction)
 
-            row_layout.addWidget(slider, 1)
-            row_layout.addWidget(val_lbl)
-            self.inputs[feat] = slider
-            self.rows[feat] = (lbl, row_widget, val_lbl)
-            self.param_form.addRow(lbl, row_widget)
+                row_layout.addWidget(slider, 1)
+                row_layout.addWidget(val_lbl)
+                self.inputs[feat] = slider
+                self.rows[feat] = (lbl, row_widget, val_lbl)
+                self.param_form.addRow(lbl, row_widget)
 
         vbox.addWidget(grp_param)
 
@@ -1552,6 +1607,20 @@ class ClassroomPredictorApp(QMainWindow):
         selector_row.addWidget(QLabel("对比方案:"))
         selector_row.addWidget(self.cb_compare_current)
         compare_layout.addLayout(selector_row)
+
+        load_row = QHBoxLayout()
+        self.btn_load_base = QPushButton("📥 载入基准方案")
+        self.btn_load_current = QPushButton("📥 载入对比方案")
+        for _btn in (self.btn_load_base, self.btn_load_current):
+            _btn.setFixedHeight(32)
+            _btn.setStyleSheet("background-color: #2980b9; color: white; font-weight: bold;")
+            _btn.setToolTip("恢复所选方案的全部设计变量（含朝向/遮阳形式）、预测结果和三维模型。")
+            _btn.setEnabled(False)
+        self.btn_load_base.clicked.connect(lambda: self.load_selected_scheme('base'))
+        self.btn_load_current.clicked.connect(lambda: self.load_selected_scheme('current'))
+        load_row.addWidget(self.btn_load_base)
+        load_row.addWidget(self.btn_load_current)
+        compare_layout.addLayout(load_row)
 
         self.lbl_compare_hint = QLabel("请先执行预测，并至少保存两个方案后再进行对比。")
         self.lbl_compare_hint.setStyleSheet("color: #7f8c8d;")
@@ -1628,6 +1697,11 @@ class ClassroomPredictorApp(QMainWindow):
             else:
                 self.cb_compare_base.setCurrentText(names[0])
                 self.cb_compare_current.setCurrentText(names[0])
+        has_any = len(names) > 0
+        if hasattr(self, 'btn_load_base'):
+            self.btn_load_base.setEnabled(has_any)
+        if hasattr(self, 'btn_load_current'):
+            self.btn_load_current.setEnabled(has_any)
         self.update_comparison_panel()
 
     def update_comparison_panel(self, *args):
@@ -1665,6 +1739,66 @@ class ClassroomPredictorApp(QMainWindow):
             self.compare_labels[key]['current'].setText(self.format_metric(key, current_val))
             self.compare_labels[key]['delta'].setText(f"{delta_val:+.2f}")
             self.compare_labels[key]['delta'].setStyleSheet(f"font-weight: bold; color: {delta_color};")
+
+    def load_selected_scheme(self, which='current'):
+        """从已保存方案列表加载：同步朝向/遮阳形式、全部设计变量、三维模型、预测结果。"""
+        if not self.saved_schemes:
+            QMessageBox.information(self, "暂无可加载方案", "请先保存至少一个方案后再加载。")
+            return
+        combo = self.cb_compare_base if which == 'base' else self.cb_compare_current
+        name = (combo.currentText() or "").strip()
+        scheme = self.get_saved_scheme(name)
+        if not scheme:
+            QMessageBox.information(self, "未选中方案", "请选择一个有效的已保存方案。")
+            return
+
+        self.cb_ori.blockSignals(True)
+        self.cb_sha.blockSignals(True)
+        try:
+            self.cb_ori.setCurrentText(scheme['ori'])
+            self.cb_sha.setCurrentText(scheme['shade'])
+        finally:
+            self.cb_ori.blockSignals(False)
+            self.cb_sha.blockSignals(False)
+
+        self.apply_presets()
+
+        raw_inputs = scheme.get('raw_inputs', {}) or {}
+        for feat, val in raw_inputs.items():
+            if feat in self.inputs and val is not None:
+                try:
+                    self.set_feature_value(feat, float(val))
+                except Exception:
+                    pass
+
+        try:
+            self.update_viz_only()
+        except TypeError:
+            self.update_viz_only(preserve_limits=False)
+
+        for key, val in (scheme.get('results') or {}).items():
+            if key in self.res_labels:
+                try:
+                    self.res_labels[key].setText(f"{float(val):.2f}")
+                except Exception:
+                    pass
+
+        self.last_prediction = {
+            'ori': scheme['ori'],
+            'shade': scheme['shade'],
+            'raw_inputs': dict(scheme.get('raw_inputs', {})),
+            'calculated': dict(scheme.get('calculated', {})),
+            'results': dict(scheme.get('results', {})),
+        }
+        self.btn_save_scheme.setEnabled(True)
+
+        try:
+            self.statusBar().showMessage(
+                f"已载入方案「{name}」：朝向={scheme['ori'].split()[0]}，遮阳形式={scheme['shade'].split()[0]}",
+                6000
+            )
+        except Exception:
+            pass
 
     def save_current_scheme(self):
         if not self.last_prediction:
@@ -1708,6 +1842,11 @@ class ClassroomPredictorApp(QMainWindow):
             vis = f in active_list or (f == 'WWR_s_exp' and is_p)
             lbl.setVisible(vis)
             row_widget.setVisible(vis)
+        for hdr, feats in getattr(self, '_param_section_headers', []):
+            hdr.setVisible(any(
+                (ff in active_list or (ff == 'WWR_s_exp' and is_p)) for ff in feats
+            ))
+
             if f == 'WWR_s':
                 self.inputs[f].setEnabled(not is_p)
 
@@ -1719,6 +1858,7 @@ class ClassroomPredictorApp(QMainWindow):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         saved_elev, saved_azim = self.ax.elev, self.ax.azim
         draw_classroom_3d(self.ax, cal_data, sha_mode, self.chk_upper.isChecked(), self.chk_side.isChecked())
         self.ax.view_init(elev=saved_elev, azim=saved_azim)
@@ -1729,13 +1869,15 @@ class ClassroomPredictorApp(QMainWindow):
         raw = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal = geometry_engine(raw, sha)
         fmt = self.cb_export_fmt.currentText()
+        unit_index = self.cb_export_unit.currentIndex()
+        unit_label = self.cb_export_unit.currentText()
         if "3DS" in fmt:
             path, _ = QFileDialog.getSaveFileName(
                 self, "导出 3D 模型", "classroom_model.3ds", "3DS Files (*.3ds)")
             if not path:
                 return
             try:
-                out = export_classroom_3ds(path, cal, sha)
+                out = export_classroom_3ds(path, cal, sha, unit_index=unit_index)
                 QMessageBox.information(self, "导出成功",
                     f"3DS 模型已导出（按图例分层）：\n\n"
                     f"模型文件：{out}\n\n"
@@ -1749,10 +1891,14 @@ class ClassroomPredictorApp(QMainWindow):
             if not path:
                 return
             try:
-                obj_path, mtl_path = export_classroom_obj(path, cal, sha)
+                obj_path, mtl_path = export_classroom_obj(path, cal, sha, unit_index=unit_index)
+                su_hint = ""
+                if unit_index == 1:
+                    su_hint = "\nSketchUp：直接导入即可，尺寸约为 9m×9m×3.8m（按英寸数值写入）。"
                 QMessageBox.information(self, "导出成功",
                     f"OBJ 模型已导出（按图例分层）：\n\n"
-                    f"模型文件：{obj_path}\n材质文件：{mtl_path}\n\n"
+                    f"模型文件：{obj_path}\n材质文件：{mtl_path}\n"
+                    f"导出单位：{unit_label}{su_hint}\n\n"
                     f"可直接导入 3ds Max / Blender / Rhino / SketchUp 等软件。")
             except Exception as e:
                 QMessageBox.critical(self, "导出失败", f"导出过程出错：\n{str(e)}")
@@ -1806,14 +1952,7 @@ class ClassroomPredictorApp(QMainWindow):
                         f"已按比例自动缩放：MTL = {cal_data['M_TL']},  MTR = {cal_data['M_TR']}"
                     )
 
-            writeback_keys = [
-                'WWR_c', 'WWR_s', 'H_s', 'W_s', 'W_c',
-                'SH_s', 'SH_c', 'd_A_s', 'd_B_s', 'd_A_c', 'd_B_c',
-                'L_oh', 'd_mv', 'M_TL', 'M_TR'
-            ]
-            for key in writeback_keys:
-                if key in cal_data:
-                    self.set_feature_value(key, cal_data[key])
+            sync_geometry_results_to_ui(self, cal_data)
 
             active_feats = SHADE_FEATURE_MAP.get(sha_mode, FEATURE_ORDER[1:13])
             X = pd.DataFrame([[cal_data[f] for f in active_feats]], columns=active_feats)
@@ -1821,7 +1960,7 @@ class ClassroomPredictorApp(QMainWindow):
             ckey = (ori_mode, sha_mode)
             if ckey not in self.model_cache:
                 self.model_cache[ckey] = {
-                    f"{t}_{m}": joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib"))
+                    f"{t}_{m}": _load_model_file(folder, f"{m}_model_{t}.joblib")
                     for t in TARGET_KEYS for m in ["xgb", "lgbm", "rf", "meta"]
                 }
 
@@ -1993,12 +2132,20 @@ def geometry_engine(ui, mode):
     total_opening_w = min(total_opening_w, wl)
 
     if is_vertical_mode:
-        nv = max(2, int(safe_float('N_v', 2)))
-        net_glass_w_theory = max(0.1, total_opening_w - (nv - 1) * wv)
-        ws_pane = round(net_glass_w_theory / max(1, nv - 1), 1)
-        net_glass_w_actual = ws_pane * (nv - 1)
+        # 垂直遮阳划分后的单扇窗宽 W_s 不低于 0.8 m（总开口与 W_v 限制最大分格数）
+        MIN_WS_PANE = 0.8
+        nv_req = max(2, int(safe_float('N_v', 2)))
+        k = nv_req - 1
+        k_cap = max(1, int(total_opening_w / (MIN_WS_PANE + wv + 1e-12)))
+        k = min(k, k_cap)
+        nv = k + 1
+        net_glass_w_theory = max(0.01, total_opening_w - k * wv)
+        ws_pane = round(net_glass_w_theory / k, 1)
+        if ws_pane + 1e-9 < MIN_WS_PANE:
+            ws_pane = MIN_WS_PANE
+        net_glass_w_actual = ws_pane * k
         actual_wwr_s = round((net_glass_w_actual * hs_actual / wa) * 100.0)
-        total_opening_w_actual = net_glass_w_actual + (nv - 1) * wv
+        total_opening_w_actual = net_glass_w_actual + k * wv
     else:
         nv = 0
         ws_pane = round(total_opening_w, 1)
@@ -2113,6 +2260,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V2):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         saved_view = self.capture_3d_view_state()
         draw_classroom_3d(self.ax, cal_data, sha_mode, self.chk_upper.isChecked(), self.chk_side.isChecked())
         self.restore_3d_view_state(saved_view, restore_limits=False)
@@ -2167,14 +2315,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V2):
                         f"已按比例自动缩放：MTL = {_format_feature_value('M_TL', cal_data['M_TL'])},  MTR = {_format_feature_value('M_TR', cal_data['M_TR'])}"
                     )
 
-            writeback_keys = [
-                'WWR_c', 'WWR_s', 'H_s', 'W_s', 'W_c',
-                'SH_s', 'SH_c', 'd_A_s', 'd_B_s', 'd_A_c', 'd_B_c',
-                'L_oh', 'd_mv', 'M_TL', 'M_TR'
-            ]
-            for key in writeback_keys:
-                if key in cal_data:
-                    self.set_feature_value(key, cal_data[key])
+            sync_geometry_results_to_ui(self, cal_data)
 
             active_feats = SHADE_FEATURE_MAP.get(sha_mode, FEATURE_ORDER[1:13])
             X = pd.DataFrame([[cal_data[f] for f in active_feats]], columns=active_feats)
@@ -2182,7 +2323,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V2):
             ckey = (ori_mode, sha_mode)
             if ckey not in self.model_cache:
                 self.model_cache[ckey] = {
-                    f"{t}_{m}": joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib"))
+                    f"{t}_{m}": _load_model_file(folder, f"{m}_model_{t}.joblib")
                     for t in TARGET_KEYS for m in ["xgb", "lgbm", "rf", "meta"]
                 }
 
@@ -2237,6 +2378,267 @@ CORRIDOR_USABLE = 9.0 - DOOR_ZONE * 2   # = 6.2 m
 MIN_D_A_S = 1.0   # 距黑板侧最小间距
 MIN_D_B_S = 0.2   # 另一侧最小间距
 
+
+# ================== 3D 模型导出 (OBJ / 3DS) ==================
+CLASSROOM_LENGTH_M = 9.0
+CLASSROOM_DEPTH_M = 9.0
+CLASSROOM_HEIGHT_M = 3.8
+PLENUM_HEIGHT_M = 3.0
+
+METERS_TO_INCHES = 39.37007874015748
+
+# (显示名, 顶点倍率, OBJ 注释单位, 尺寸后缀)
+# SketchUp 导入 OBJ 时通常把数字当「英寸」；写入米×39.37 后显示约 9000mm≈9m
+EXPORT_UNIT_OPTIONS = [
+    ("米 (Rhino / Blender)", 1.0, "meters", "m"),
+    ("SketchUp", METERS_TO_INCHES, "inches", "in"),
+]
+
+
+def _scale_vertices(verts, scale):
+    if scale == 1.0:
+        return verts
+    return [(x * scale, y * scale, z * scale) for x, y, z in verts]
+
+
+def _export_unit_meta(unit_index=1):
+    idx = max(0, min(int(unit_index), len(EXPORT_UNIT_OPTIONS) - 1))
+    _, scale, unit_name, unit_abbr = EXPORT_UNIT_OPTIONS[idx]
+    room_line = (
+        f"# room: {CLASSROOM_LENGTH_M * scale:.4f} x "
+        f"{CLASSROOM_DEPTH_M * scale:.4f} x "
+        f"{CLASSROOM_HEIGHT_M * scale:.4f} {unit_abbr} (L x D x H)"
+    )
+    return scale, unit_name, room_line
+
+
+OBJ_MATERIALS = {
+    'wall_frame':       ((0.70, 0.70, 0.70), '主体框架'),
+    'corridor_surface': ((0.55, 0.55, 0.55), '走廊侧地坪/吊顶'),
+    'corridor_window':  ((0.56, 0.93, 0.56), '走廊窗'),
+    'door':             ((0.55, 0.27, 0.07), '门'),
+    'blackboard':       ((0.14, 0.23, 0.18), '黑板'),
+    'skylight_window':  ((0.53, 0.81, 0.92), '采光窗'),
+    'vertical_shading': ((0.00, 0.50, 0.50), '垂直遮阳'),
+    'overhang_shading': ((0.80, 0.36, 0.36), '悬挑遮阳'),
+    'frame_shading':    ((1.00, 0.65, 0.00), '框式遮阳'),
+}
+
+
+def _build_classroom_meshes(data, sha_mode):
+    """收集教室几何（米，Z-up：X 长度，Y 进深，Z 高度），供 OBJ/3DS 共用。"""
+    L, D, H = CLASSROOM_LENGTH_M, CLASSROOM_DEPTH_M, CLASSROOM_HEIGHT_M
+    meshes = {}
+
+    def q(group, *pts):
+        meshes.setdefault(group, {'verts': [], 'faces': []})
+        m = meshes[group]
+        base = len(m['verts'])
+        m['verts'].extend(pts)
+        if len(pts) == 4:
+            m['faces'].append((base, base + 1, base + 2))
+            m['faces'].append((base, base + 2, base + 3))
+        elif len(pts) == 3:
+            m['faces'].append((base, base + 1, base + 2))
+
+    q('wall_frame', (0, 0, 0), (L, 0, 0), (L, D, 0), (0, D, 0))
+    q('wall_frame', (0, 0, H), (0, D, H), (L, D, H), (L, 0, H))
+    q('wall_frame', (0, 0, 0), (L, 0, 0), (L, 0, H), (0, 0, H))
+    q('wall_frame', (0, D, 0), (L, D, 0), (L, D, H), (0, D, H))
+    q('wall_frame', (0, 0, 0), (0, D, 0), (0, D, H), (0, 0, H))
+    q('wall_frame', (L, 0, 0), (L, D, 0), (L, D, H), (L, 0, H))
+
+    q('corridor_surface', (-3, 0, 0), (0, 0, 0), (0, D, 0), (-3, D, 0))
+    q('corridor_surface', (-3, 0, PLENUM_HEIGHT_M), (0, 0, PLENUM_HEIGHT_M), (0, D, PLENUM_HEIGHT_M), (-3, D, PLENUM_HEIGHT_M))
+    q('corridor_surface', (-3, 0, H), (0, 0, H), (0, D, H), (-3, D, H))
+
+    wc = data.get('W_c', 4.0)
+    hc = data.get('H_c', 1.0)
+    shc = data.get('SH_c', 1.0)
+    d_ac = data.get('d_A_c', 0.0)
+    yc = DOOR_ZONE + d_ac
+    q('corridor_window', (0, yc, shc), (0, yc + wc, shc), (0, yc + wc, shc + hc), (0, yc, shc + hc))
+
+    for yd in [0.2, D - 0.2 - 1.2]:
+        q('door', (0, yd, 0), (0, yd + 1.2, 0), (0, yd + 1.2, 2.2), (0, yd, 2.2))
+
+    q('blackboard', (2.0, 0.02, 0.9), (7.0, 0.02, 0.9), (7.0, 0.02, 2.3), (2.0, 0.02, 2.3))
+
+    is_v = "垂直" in sha_mode or "组合" in sha_mode
+    nv = int(data.get('N_v', 0))
+    wv = data.get('W_v', 0.1)
+    ws = data.get('W_s', 4.0)
+    hs = data.get('H_s', 2.0)
+    shs = data.get('SH_s', 0.9)
+    total_open = ((nv - 1) * ws + (nv - 1) * wv) if (is_v and nv >= 2) else ws
+    ys = data.get('d_A_s', MIN_D_A_S)
+    num_p = (nv - 1) if (is_v and nv >= 2) else 1
+    for i in range(num_p):
+        cy = ys + wv / 2 + i * (ws + wv) if (is_v and nv >= 2) else ys
+        q('skylight_window', (L, cy, shs), (L, cy + ws, shs), (L, cy + ws, shs + hs), (L, cy, shs + hs))
+
+    if is_v and nv > 0:
+        lv = data.get('L_v', 0)
+        mt_l = data.get('M_TL', 0)
+        mt_r = data.get('M_TR', 0)
+        for i in range(nv):
+            by = ys + i * (ws + wv)
+            hw = wv / 2
+            p1 = (L, by - hw, 0)
+            p2 = (L, by + hw, 0)
+            p3 = (L, by + hw, H)
+            p4 = (L, by - hw, H)
+            p5 = (L + lv, by - hw + mt_l, 0)
+            p6 = (L + lv, by + hw - mt_r, 0)
+            p7 = (L + lv, by + hw - mt_r, H)
+            p8 = (L + lv, by - hw + mt_l, H)
+            q('vertical_shading', p1, p2, p3, p4)
+            q('vertical_shading', p5, p6, p7, p8)
+            q('vertical_shading', p1, p5, p8, p4)
+            q('vertical_shading', p2, p6, p7, p3)
+            q('vertical_shading', p1, p2, p6, p5)
+            q('vertical_shading', p4, p3, p7, p8)
+
+    if ("悬挑" in sha_mode or "组合" in sha_mode) and data.get('L_oh', 0) > 0:
+        ar = np.radians(data.get('alpha_oh', 0))
+        loh = data['L_oh']
+        dmv = data.get('d_mv', 0)
+        zt = H - dmv
+        ze = zt - loh * np.sin(ar)
+        xe = L + loh * np.cos(ar)
+        q('overhang_shading', (L, 0, zt), (xe, 0, ze), (xe, D, ze), (L, D, zt))
+
+    if "框式" in sha_mode:
+        fbl, fbr, ftr, ftl = data.get('F_BL', 0), data.get('F_BR', 0), data.get('F_TR', 0), data.get('F_TL', 0)
+        q('frame_shading', (L, ys, shs), (L, ys + total_open, shs), (L + fbr, ys + total_open, shs), (L + fbl, ys, shs))
+        q('frame_shading', (L, ys + total_open, shs), (L, ys + total_open, shs + hs), (L + ftr, ys + total_open, shs + hs), (L + fbr, ys + total_open, shs))
+        q('frame_shading', (L, ys, shs + hs), (L, ys + total_open, shs + hs), (L + ftr, ys + total_open, shs + hs), (L + ftl, ys, shs + hs))
+        q('frame_shading', (L, ys, shs), (L, ys, shs + hs), (L + ftl, ys, shs + hs), (L + fbl, ys, shs))
+
+    return meshes
+
+
+def _collect_mesh_data(data, sha_mode):
+    """兼容旧名；几何构建见 _build_classroom_meshes。"""
+    return _build_classroom_meshes(data, sha_mode)
+
+
+def export_classroom_obj(filepath, data, sha_mode, unit_index=1, unit_label=None):
+    """导出教室三维模型为 OBJ + MTL（Z-up）。unit_index: 0=米, 1=SketchUp。"""
+    scale, unit_name, room_line = _export_unit_meta(unit_index)
+    meshes = _build_classroom_meshes(data, sha_mode)
+    all_verts = []
+    groups = {}
+
+    for gname, mesh in meshes.items():
+        if not mesh['verts'] or not mesh['faces']:
+            continue
+        base = len(all_verts) + 1
+        all_verts.extend(_scale_vertices(mesh['verts'], scale))
+        groups[gname] = [
+            (base + a, base + b, base + c)
+            for a, b, c in mesh['faces']
+        ]
+
+    mtl_path = filepath.rsplit('.', 1)[0] + '.mtl'
+    mtl_name = os.path.basename(mtl_path)
+
+    with open(mtl_path, 'w', encoding='utf-8') as f:
+        for name, ((r, g, b), label) in OBJ_MATERIALS.items():
+            f.write(f"# {label}\nnewmtl {name}\n")
+            f.write(f"Kd {r:.3f} {g:.3f} {b:.3f}\n")
+            f.write(f"Ka {r*0.3:.3f} {g*0.3:.3f} {b*0.3:.3f}\n")
+            f.write(f"Ks 0.1 0.1 0.1\nNs 10.0\nd 1.0\n\n")
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(
+            "\n".join(
+                [
+                    "# SZ Classroom Predictor export",
+                    f"# units: {unit_name}",
+                    "# up_axis: Z",
+                    room_line,
+                    f"# source_geometry_m: {CLASSROOM_LENGTH_M} x {CLASSROOM_DEPTH_M} x {CLASSROOM_HEIGHT_M}",
+                    f"mtllib {mtl_name}",
+                    "",
+                ]
+            )
+        )
+        for v in all_verts:
+            f.write(f"v {v[0]:.4f} {v[1]:.4f} {v[2]:.4f}\n")
+        f.write("\n")
+        for gname, faces in groups.items():
+            label = OBJ_MATERIALS.get(gname, (None, gname))[1]
+            f.write(f"# {label}\ng {gname}\nusemtl {gname}\n")
+            for face in faces:
+                f.write("f " + " ".join(str(idx) for idx in face) + "\n")
+            f.write("\n")
+
+    return filepath, mtl_path
+
+
+def export_classroom_3ds(filepath, data, sha_mode, unit_index=1, unit_label=None):
+    """导出教室三维模型为 .3ds（Z-up）。unit_index: 0=米, 1=SketchUp。"""
+    import struct
+    scale, _, _ = _export_unit_meta(unit_index)
+    meshes = _build_classroom_meshes(data, sha_mode)
+
+    def _build_mesh_chunk(name, verts, faces):
+        buf = bytearray()
+        def w16(v): buf.extend(struct.pack('<H', v))
+        def w32(v): buf.extend(struct.pack('<I', v))
+        def wf(v):  buf.extend(struct.pack('<f', v))
+
+        obj_start = len(buf)
+        w16(0x4000); w32(0)
+        buf.extend(name[:10].encode('ascii','replace') + b'\x00')
+
+        mesh_start = len(buf)
+        w16(0x4100); w32(0)
+
+        vlist_start = len(buf)
+        w16(0x4110); w32(0)
+        w16(len(verts))
+        for x, y, z in verts:
+            wf(x)
+            wf(y)
+            wf(z)
+        struct.pack_into('<I', buf, vlist_start+2, len(buf)-vlist_start)
+
+        flist_start = len(buf)
+        w16(0x4120); w32(0)
+        w16(len(faces))
+        for a,b_,c in faces:
+            w16(a); w16(b_); w16(c); w16(7)
+        struct.pack_into('<I', buf, flist_start+2, len(buf)-flist_start)
+
+        struct.pack_into('<I', buf, mesh_start+2, len(buf)-mesh_start)
+        struct.pack_into('<I', buf, obj_start+2, len(buf)-obj_start)
+        return bytes(buf)
+
+    mesh_chunks = bytearray()
+    for gname, m in meshes.items():
+        if not m['verts'] or not m['faces']:
+            continue
+        mesh_chunks.extend(
+            _build_mesh_chunk(gname, _scale_vertices(m['verts'], scale), m['faces'])
+        )
+
+    editor_chunk = bytearray()
+    editor_chunk.extend(struct.pack('<H', 0x3D3D))
+    editor_chunk.extend(struct.pack('<I', 6 + len(mesh_chunks)))
+    editor_chunk.extend(mesh_chunks)
+
+    ver = struct.pack('<HI', 0x0002, 10) + struct.pack('<I', 3)
+    main_chunk = bytearray()
+    main_chunk.extend(struct.pack('<H', 0x4D4D))
+    main_chunk.extend(struct.pack('<I', 6 + len(ver) + len(editor_chunk)))
+    main_chunk.extend(ver)
+    main_chunk.extend(editor_chunk)
+
+    with open(filepath, 'wb') as f:
+        f.write(main_chunk)
+    return filepath
 
 def _resolve_offsets_with_mins(left_in, right_in, total_avail, min_left, min_right):
     """在 min_left / min_right 约束下分配 left 和 right，使 left+right = total_avail。"""
@@ -2346,12 +2748,20 @@ def geometry_engine(ui, mode):
     total_opening_w = min(total_opening_w, wl)
 
     if is_vertical_mode:
-        nv = max(2, int(safe_float('N_v', 2)))
-        net_glass_w_theory = max(0.1, total_opening_w - (nv - 1) * wv)
-        ws_pane = round(net_glass_w_theory / max(1, nv - 1), 1)
-        net_glass_w_actual = ws_pane * (nv - 1)
+        # 垂直遮阳划分后的单扇窗宽 W_s 不低于 0.8 m（总开口与 W_v 限制最大分格数）
+        MIN_WS_PANE = 0.8
+        nv_req = max(2, int(safe_float('N_v', 2)))
+        k = nv_req - 1
+        k_cap = max(1, int(total_opening_w / (MIN_WS_PANE + wv + 1e-12)))
+        k = min(k, k_cap)
+        nv = k + 1
+        net_glass_w_theory = max(0.01, total_opening_w - k * wv)
+        ws_pane = round(net_glass_w_theory / k, 1)
+        if ws_pane + 1e-9 < MIN_WS_PANE:
+            ws_pane = MIN_WS_PANE
+        net_glass_w_actual = ws_pane * k
         actual_wwr_s = round((net_glass_w_actual * hs_actual / wa) * 100.0)
-        total_opening_w_actual = net_glass_w_actual + (nv - 1) * wv
+        total_opening_w_actual = net_glass_w_actual + k * wv
     else:
         nv = 0
         ws_pane = round(total_opening_w, 1)
@@ -2798,13 +3208,32 @@ def geometry_engine(ui, mode):
     total_opening_w = min(total_opening_w, max_opening_w)
 
     if is_vertical_mode:
-        nv = max(2, int(safe_float('N_v', 2)))
-        net_glass_w_limit = max(0.0, total_opening_w - (nv - 1) * wv)
-        ws_pane = round(net_glass_w_limit / max(1, nv - 1), 1)
-        while ws_pane > 0 and (ws_pane * (nv - 1) + (nv - 1) * wv) > max_opening_w + 1e-9:
-            ws_pane = round(max(0.0, ws_pane - 0.1), 1)
-        net_glass_w_actual = ws_pane * (nv - 1)
-        total_opening_w_actual = net_glass_w_actual + (nv - 1) * wv
+        # 垂直遮阳划分后的单扇窗宽 W_s 不低于 0.8 m（总开口与 W_v 限制最大分格数）
+        MIN_WS_PANE = 0.8
+        nv_req = max(2, int(safe_float('N_v', 2)))
+        k = nv_req - 1
+        k_cap = max(1, int(total_opening_w / (MIN_WS_PANE + wv + 1e-12)))
+        k = min(k, k_cap)
+        nv = k + 1
+        net_glass_w_theory = max(0.01, total_opening_w - k * wv)
+        ws_pane = round(net_glass_w_theory / k, 1)
+        if ws_pane + 1e-9 < MIN_WS_PANE:
+            ws_pane = MIN_WS_PANE
+        net_glass_w_actual = ws_pane * k
+        total_opening_w_actual = net_glass_w_actual + k * wv
+        while total_opening_w_actual > max_opening_w + 1e-9 and k > 1:
+            k -= 1
+            nv = k + 1
+            net_glass_w_theory = max(0.01, total_opening_w - k * wv)
+            ws_pane = round(net_glass_w_theory / k, 1)
+            if ws_pane + 1e-9 < MIN_WS_PANE:
+                ws_pane = MIN_WS_PANE
+            net_glass_w_actual = ws_pane * k
+            total_opening_w_actual = net_glass_w_actual + k * wv
+        if total_opening_w_actual > max_opening_w + 1e-9:
+            ws_pane = round(max(0.0, max_opening_w - k * wv) / k, 1)
+            net_glass_w_actual = ws_pane * k
+            total_opening_w_actual = net_glass_w_actual + k * wv
         actual_wwr_s = round((net_glass_w_actual * hs_actual / wa) * 100.0)
     else:
         nv = 0
@@ -2951,6 +3380,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V3):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         draw_classroom_3d(self.ax, cal_data, sha_mode, self.chk_upper.isChecked(), self.chk_side.isChecked())
         self.restore_3d_view_state(self.default_3d_view_state())
         self.canvas.draw_idle()
@@ -2959,6 +3389,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V3):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         saved_view = self.capture_3d_view_state()
         draw_classroom_3d(self.ax, cal_data, sha_mode, self.chk_upper.isChecked(), self.chk_side.isChecked())
         self.restore_3d_view_state(saved_view, restore_limits=preserve_limits)
@@ -3022,14 +3453,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V3):
                         f"已按比例自动缩放：MTL = {_format_feature_value('M_TL', cal_data['M_TL'])},  MTR = {_format_feature_value('M_TR', cal_data['M_TR'])}"
                     )
 
-            writeback_keys = [
-                'WWR_c', 'WWR_s', 'H_s', 'W_s', 'W_c',
-                'SH_s', 'SH_c', 'd_A_s', 'd_B_s', 'd_A_c', 'd_B_c',
-                'L_oh', 'd_mv', 'M_TL', 'M_TR'
-            ]
-            for key in writeback_keys:
-                if key in cal_data:
-                    self.set_feature_value(key, cal_data[key])
+            sync_geometry_results_to_ui(self, cal_data)
 
             active_feats = SHADE_FEATURE_MAP.get(sha_mode, FEATURE_ORDER[1:13])
             X = pd.DataFrame([[cal_data[f] for f in active_feats]], columns=active_feats)
@@ -3037,7 +3461,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V3):
             ckey = (ori_mode, sha_mode)
             if ckey not in self.model_cache:
                 self.model_cache[ckey] = {
-                    f"{t}_{m}": joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib"))
+                    f"{t}_{m}": _load_model_file(folder, f"{m}_model_{t}.joblib")
                     for t in TARGET_KEYS for m in ["xgb", "lgbm", "rf", "meta"]
                 }
 
@@ -3288,6 +3712,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V4):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         show_upper = self.chk_upper.isChecked()
         show_side = self.chk_side.isChecked()
 
@@ -3314,6 +3739,7 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V4):
         sha_mode = self.cb_sha.currentText()
         raw_in = {f: self.get_feature_value(f) for f in FEATURE_ORDER}
         cal_data = geometry_engine(raw_in, sha_mode)
+        sync_geometry_results_to_ui(self, cal_data)
         show_upper = self.chk_upper.isChecked()
         show_side = self.chk_side.isChecked()
 
@@ -3394,25 +3820,17 @@ class ClassroomPredictorApp(BaseClassroomPredictorApp_V4):
                         f"已按比例自动缩放：MTL = {_format_feature_value('M_TL', cal_data['M_TL'])},  MTR = {_format_feature_value('M_TR', cal_data['M_TR'])}"
                     )
 
-            writeback_keys = [
-                'WWR_c', 'WWR_s', 'H_s', 'W_s', 'W_c',
-                'SH_s', 'SH_c', 'd_A_s', 'd_B_s', 'd_A_c', 'd_B_c',
-                'L_oh', 'd_mv', 'M_TL', 'M_TR'
-            ]
-            for key in writeback_keys:
-                if key in cal_data:
-                    self.set_feature_value(key, cal_data[key])
+            sync_geometry_results_to_ui(self, cal_data)
 
             ckey = (ori_mode, sha_mode)
             if ckey not in self.model_cache:
                 cache = {}
                 for t in TARGET_KEYS:
                     for m in ["xgb", "lgbm", "rf", "meta"]:
-                        cache[f"{t}_{m}"] = joblib.load(os.path.join(folder, f"{m}_model_{t}.joblib"))
-                xtrain_path = os.path.join(folder, "X_train.joblib")
-                if os.path.exists(xtrain_path):
-                    cache['_feature_order'] = joblib.load(xtrain_path).columns.tolist()
-                else:
+                        cache[f"{t}_{m}"] = _load_model_file(folder, f"{m}_model_{t}.joblib")
+                try:
+                    cache['_feature_order'] = _load_model_file(folder, "X_train.joblib").columns.tolist()
+                except (FileNotFoundError, OSError):
                     cache['_feature_order'] = None
                 self.model_cache[ckey] = cache
 

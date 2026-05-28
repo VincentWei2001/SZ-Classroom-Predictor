@@ -3,8 +3,13 @@ build/
 dist/
 
 # Release artifacts (use GitHub Releases instead of committing binaries)
-*.zip
-school_app_models.bin
+release/*.zip
+release/school_app_portable/
+release/school_app_secure_portable/
+models/school_app_models.bin
+
+# Local PyInstaller/Qt debug builds
+_qttest/
 
 # Python
 __pycache__/
@@ -16,22 +21,27 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Trained model artifacts (end users: use GitHub Release zip with school_app_models.bin)
+# Trained model artifacts
 *.joblib
 **/SHAP_bar_*.svg
 **/SHAP_dot_*.svg
 
-# Scenario / training exports at repo root (keep locally for rebuild_secure_package)
-030*_*.csv
-031*_*.csv
-模型评估汇总*.csv
-不同行_*.csv
-255行*.csv
+# Local data (training CSV)
+data/
 
-# Only version the canonical app notebook (other .ipynb stay local)
+# Notebooks: only track canonical app notebook
 *.ipynb
-!classroom_predictor_app.ipynb
+!app/classroom_predictor_app.ipynb
+
+# Archive & logs
+archive/
 
 # OS
 Thumbs.db
 Desktop.ini
+
+# Legacy root clutter (should not reappear)
+github_release/
+school_app_models.bin
+school_app_secure_portable.zip
+build_secure_package.log

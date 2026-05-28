@@ -24,10 +24,20 @@ def _cipher() -> Fernet:
 
 
 def _search_roots(base_path: str | Path) -> list[Path]:
-    base_root = Path(base_path)
-    roots = [base_root]
+    """PyInstaller onedir 常把 add-data 放在 exe 同级的 _internal 下，而 BASE_PATH 多为 exe 所在目录。"""
+    base_root = Path(base_path).resolve()
+    candidates = [base_root]
     if base_root.name.lower() == "_internal":
-        roots.append(base_root.parent)
+        candidates.append(base_root.parent)
+    internal = base_root / "_internal"
+    if internal.is_dir():
+        candidates.append(internal.resolve())
+    seen: set[Path] = set()
+    roots: list[Path] = []
+    for r in candidates:
+        if r not in seen:
+            seen.add(r)
+            roots.append(r)
     return roots
 
 
@@ -97,6 +107,9 @@ def load_bundled_model(base_path: str | Path, folder_name: str, model_filename: 
 
     compressed_bytes = _cipher().decrypt(encrypted_payload)
     raw_bytes = zlib.decompress(compressed_bytes)
+    import sklearn_joblib_compat
+
+    sklearn_joblib_compat.register()
     return joblib.load(BytesIO(raw_bytes))
 
 
@@ -108,6 +121,10 @@ def _iter_runtime_model_files(source_root: Path, folder_names: list[str]):
         for model_path in sorted(folder_path.glob("*.joblib")):
             if model_path.name.startswith(RUNTIME_MODEL_PREFIXES):
                 yield folder_name, model_path
+        # 与磁盘目录模式一致：预测必须用训练时列名（含 Frame_* 等），否则 sklearn 报 feature names mismatch
+        xtrain = folder_path / "X_train.joblib"
+        if xtrain.is_file():
+            yield folder_name, xtrain
 
 
 def build_model_bundle(

@@ -26,11 +26,11 @@
 
 ## 获取软件 · Obtaining the software
 
-**中文：** 本仓库的 **Git 源码不等于可安装程序**。请从 **GitHub Releases** 下载已打包的发行版，在最新版本中获取 **`school_app_secure_portable.zip`**（或页面中说明的同名便携包）。
+**中文：** 本仓库的 **Git 源码不等于可安装程序**。请从 **GitHub Releases** 下载已打包的发行版，在最新版本中获取 **`school_app_portable.zip`**（或页面中说明的同名便携包）。
 
 **[前往 Releases 下载页面](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases)**
 
-**English:** The **Git repository is not the installable app**. Download the packaged release from **GitHub Releases** and get **`school_app_secure_portable.zip`** (or the portable package named on that page) from the latest release.
+**English:** The **Git repository is not the installable app**. Download the packaged release from **GitHub Releases** and get **`school_app_portable.zip`** (or the portable package named on that page) from the latest release.
 
 **[Go to Releases](https://github.com/VincentWei2001/SZ-Classroom-Predictor/releases)**
 
@@ -42,14 +42,14 @@
 
 1. 将 **ZIP** 解压到本地文件夹（建议使用字母、数字与常见符号路径，避免路径仅含特殊字符）。
 2. 进入解压目录，双击 **`school_app.exe`** 启动。
-3. **请勿**单独移动 `school_app.exe`；须与 **`_internal`** 保持原有相对位置，否则可能无法运行。  
+3. **请勿**单独移动 `school_app.exe`；须与 **`_internal`** 及 **`models`** 保持原有相对位置，否则可能无法运行。  
    本版为便携包，**无需安装 Python**。
 
 **English:**
 
 1. Extract the **ZIP** to a local folder (prefer paths with letters, numbers, and common symbols).
 2. Open the folder and double-click **`school_app.exe`**.
-3. **Do not** move `school_app.exe` alone; keep **`_internal`** next to it as shipped.  
+3. **Do not** move `school_app.exe` alone; keep **`_internal`** and **`models`** next to it as shipped.  
    This is a portable build—**no Python installation** is required.
 
 ---
@@ -89,9 +89,9 @@
 
 ## 开源与源码 · Open source
 
-**中文：** 源代码托管于 GitHub；主逻辑见 **`classroom_predictor_app.ipynb`** 及导出脚本，构建与模型打包脚本在仓库根目录。自行构建需要 Python 与相应依赖环境。
+**中文：** 源代码托管于 GitHub。目录结构说明见 [`docs/PROJECT_LAYOUT.md`](docs/PROJECT_LAYOUT.md)。主程序 Notebook 在 `app/classroom_predictor_app.ipynb`，打包脚本在 `scripts/`，模型数据在 `models/`。自行构建需要 conda 环境 `school_app`（Python 3.10）。
 
-**English:** Source is on GitHub; core logic is in **`classroom_predictor_app.ipynb`** and exported scripts, with build scripts at the repository root. Building from source requires Python and the documented dependencies.
+**English:** Source is on GitHub. See [`docs/PROJECT_LAYOUT.md`](docs/PROJECT_LAYOUT.md) for layout. Main notebook: `app/classroom_predictor_app.ipynb`; build scripts: `scripts/`; models: `models/`. Build requires conda env `school_app` (Python 3.10).
 
 ---
 
